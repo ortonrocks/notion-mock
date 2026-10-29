@@ -1,60 +1,8 @@
 import "server-only";
-import fs from "node:fs";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
-import Database from "better-sqlite3";
-import { blocksToPlainText, parseContent } from "./blocks";
-import type { Page, PageRow, PageSummary, PageTreeNode, SearchHit } from "./types";
-
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS pages (
-  id           TEXT PRIMARY KEY,
-  parent_id    TEXT REFERENCES pages(id) ON DELETE CASCADE,
-  title        TEXT NOT NULL DEFAULT '',
-  icon         TEXT,
-  content_json TEXT NOT NULL DEFAULT '[]',
-  plain_text   TEXT NOT NULL DEFAULT '',
-  sort_order   REAL NOT NULL DEFAULT 0,
-  version      INTEGER NOT NULL DEFAULT 0,
-  created_at   INTEGER NOT NULL,
-  updated_at   INTEGER NOT NULL,
-  deleted_at   INTEGER
-);
-CREATE INDEX IF NOT EXISTS pages_parent_idx ON pages(parent_id, sort_order);
-CREATE INDEX IF NOT EXISTS pages_updated_idx ON pages(updated_at DESC);
-
-CREATE TABLE IF NOT EXISTS settings (
-  key   TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
-`;
-
-/**
- * `CREATE TABLE IF NOT EXISTS` leaves an existing table alone, so a database
- * created before a column existed never gains it. Each entry here is applied
- * only when the column is actually missing.
- */
-function migrate(db: Database.Database) {
-  const columns = (db.prepare("PRAGMA table_info(pages)").all() as { name: string }[]).map((c) => c.name);
-  if (!columns.includes("version")) {
-    db.exec("ALTER TABLE pages ADD COLUMN version INTEGER NOT NULL DEFAULT 0");
-  }
-}
-
-function openDatabase() {
-  const file = process.env.NOTION_MOCK_DB ?? path.join(process.cwd(), "data", "notion.db");
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const db = new Database(file);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-  // Next spawns more than one worker in dev, so two processes can hold the same
-  // file. Without this a writer that finds the lock taken fails immediately
-  // instead of waiting for it.
-  db.pragma("busy_timeout = 5000");
-  db.exec(SCHEMA);
-  migrate(db);
-  return db;
-}
+import { blocksToPlainText, parseContent } from "../blocks";
+import type { Page, PageRow, PageSummary, PageTreeNode, SearchHit } from "../types";
+import { db } from "./connection";
 
 /** Thrown when an update targets a version of the page that is no longer current. */
 export class VersionConflictError extends Error {
@@ -65,11 +13,21 @@ export class VersionConflictError extends Error {
   }
 }
 
-// `next dev` re-evaluates modules on every hot reload; without this each reload
-// would open (and leak) another handle on the same file.
-const globalForDb = globalThis as unknown as { __notionMockDb?: Database.Database };
-const db = globalForDb.__notionMockDb ?? openDatabase();
-globalForDb.__notionMockDb = db;
+/** The columns a summary needs, in the order the mappers below expect. */
+const SUMMARY_COLUMNS = "id, parent_id, title, icon, sort_order, updated_at";
+
+type SummaryRow = Pick<PageRow, "id" | "parent_id" | "title" | "icon" | "sort_order" | "updated_at">;
+
+function toSummary(row: SummaryRow): PageSummary {
+  return {
+    id: row.id,
+    parentId: row.parent_id,
+    title: row.title,
+    icon: row.icon,
+    sortOrder: row.sort_order,
+    updatedAt: row.updated_at,
+  };
+}
 
 function toPage(row: PageRow): Page {
   return {
@@ -85,24 +43,6 @@ function toPage(row: PageRow): Page {
   };
 }
 
-/** Reads a stored setting, or null when it has never been written. */
-export function getSetting(key: string): string | null {
-  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
-    | { value: string }
-    | undefined;
-  return row?.value ?? null;
-}
-
-export function setSetting(key: string, value: string): void {
-  db.prepare(
-    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-  ).run(key, value);
-}
-
-export function deleteSetting(key: string): void {
-  db.prepare("DELETE FROM settings WHERE key = ?").run(key);
-}
-
 export function getPage(id: string): Page | null {
   const row = db
     .prepare("SELECT * FROM pages WHERE id = ? AND deleted_at IS NULL")
@@ -113,18 +53,12 @@ export function getPage(id: string): Page | null {
 export function listPages(): PageSummary[] {
   const rows = db
     .prepare(
-      `SELECT id, parent_id, title, icon, updated_at
+      `SELECT ${SUMMARY_COLUMNS}
        FROM pages WHERE deleted_at IS NULL
        ORDER BY sort_order ASC, created_at ASC`,
     )
-    .all() as Pick<PageRow, "id" | "parent_id" | "title" | "icon" | "updated_at">[];
-  return rows.map((r) => ({
-    id: r.id,
-    parentId: r.parent_id,
-    title: r.title,
-    icon: r.icon,
-    updatedAt: r.updated_at,
-  }));
+    .all() as SummaryRow[];
+  return rows.map(toSummary);
 }
 
 export function listTree(): PageTreeNode[] {
@@ -145,21 +79,17 @@ export function listTree(): PageTreeNode[] {
 export function listRecent(limit = 12): PageSummary[] {
   const rows = db
     .prepare(
-      `SELECT id, parent_id, title, icon, updated_at
+      `SELECT ${SUMMARY_COLUMNS}
        FROM pages WHERE deleted_at IS NULL
        ORDER BY updated_at DESC LIMIT ?`,
     )
-    .all(limit) as Pick<PageRow, "id" | "parent_id" | "title" | "icon" | "updated_at">[];
-  return rows.map((r) => ({
-    id: r.id,
-    parentId: r.parent_id,
-    title: r.title,
-    icon: r.icon,
-    updatedAt: r.updated_at,
-  }));
+    .all(limit) as SummaryRow[];
+  return rows.map(toSummary);
 }
 
-export function createPage(input: { title?: string; parentId?: string | null; icon?: string | null } = {}): Page {
+export function createPage(
+  input: { title?: string; parentId?: string | null; icon?: string | null } = {},
+): Page {
   const now = Date.now();
   const id = randomUUID();
   const parentId = input.parentId ?? null;
@@ -250,7 +180,7 @@ export function updatePage(
 }
 
 /** True when `candidate` is `ancestor` itself or sits somewhere below it. */
-function isDescendant(candidate: string, ancestor: string): boolean {
+export function isDescendant(candidate: string, ancestor: string): boolean {
   let current: string | null = candidate;
   const seen = new Set<string>();
   while (current) {

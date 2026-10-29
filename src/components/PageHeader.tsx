@@ -63,7 +63,7 @@ export default function PageHeader({
       {!sidebarOpen && (
         <button
           onClick={onOpenSidebar}
-          className="rounded px-2 py-1 text-ink-muted hover:bg-[var(--surface-hover)]"
+          className="rounded px-2 py-1 text-ink-muted hover-surface"
           title="展開側欄"
         >
           ☰
@@ -79,7 +79,7 @@ export default function PageHeader({
             key={action.key}
             onClick={() => void run(action.key, action.instruction)}
             disabled={running !== null}
-            className="rounded px-2 py-1 text-xs text-ink-muted transition hover:bg-[var(--surface-hover)] hover:text-ink disabled:opacity-40"
+            className="rounded px-2 py-1 text-xs text-ink-muted transition hover-surface hover:text-ink disabled:opacity-40"
           >
             {running === action.key ? "思考中…" : action.label}
           </button>
@@ -87,7 +87,7 @@ export default function PageHeader({
 
         <button
           onClick={onToggleAiPanel}
-          className={`ml-1 rounded px-2 py-1 text-xs transition hover:bg-[var(--surface-hover)] ${
+          className={`ml-1 rounded px-2 py-1 text-xs transition hover-surface ${
             aiPanelOpen ? "text-ink" : "text-ink-muted"
           }`}
           title="切換 AI 面板"
@@ -97,7 +97,7 @@ export default function PageHeader({
 
         <button
           onClick={onOpenSettings}
-          className="rounded px-2 py-1 text-xs text-ink-muted transition hover:bg-[var(--surface-hover)] hover:text-ink"
+          className="rounded px-2 py-1 text-xs text-ink-muted transition hover-surface hover:text-ink"
           title="設定 API key"
         >
           ⚙

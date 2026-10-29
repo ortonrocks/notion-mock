@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import SearchDialog from "./SearchDialog";
+import { ConfirmDialog } from "./ui/ConfirmDialog";
+import { useToast } from "./ui/Toast";
 import { api } from "@/lib/client-api";
 import type { PageTreeNode } from "@/lib/types";
 
@@ -41,14 +43,14 @@ export default function Sidebar({ tree, activeId, onRefresh, onCollapse }: Props
         <span className="flex-1 truncate text-sm font-medium text-ink">我的工作區</span>
         <button
           onClick={onCollapse}
-          className="rounded px-1.5 py-1 text-ink-faint hover:bg-[var(--surface-hover)] hover:text-ink"
+          className="rounded px-1.5 py-1 text-ink-faint hover-surface hover:text-ink"
           title="收合側欄"
         >
           ⟨
         </button>
         <button
           onClick={() => void createPage(null)}
-          className="rounded px-1.5 py-1 text-ink-faint hover:bg-[var(--surface-hover)] hover:text-ink"
+          className="rounded px-1.5 py-1 text-ink-faint hover-surface hover:text-ink"
           title="新增頁面"
         >
           ✎
@@ -58,7 +60,7 @@ export default function Sidebar({ tree, activeId, onRefresh, onCollapse }: Props
       <div className="px-3 pb-2">
         <button
           onClick={() => setSearchOpen(true)}
-          className="flex w-full items-center gap-2 rounded-md border border-line px-2.5 py-1.5 text-left text-sm text-ink-faint transition hover:bg-[var(--surface-hover)]"
+          className="flex w-full items-center gap-2 rounded-md border border-line px-2.5 py-1.5 text-left text-sm text-ink-faint transition hover-surface"
         >
           <span>🔍</span>
           <span className="flex-1">搜尋</span>
@@ -100,21 +102,26 @@ function TreeItem({
   onCreateChild: (parentId: string | null) => Promise<void>;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [expanded, setExpanded] = useState(true);
+  const [confirming, setConfirming] = useState(false);
   const hasChildren = node.children.length > 0;
 
   const remove = async () => {
-    if (!confirm(`刪除「${node.title || "無標題"}」？底下的子頁面也會一起刪除。`)) return;
-    await api.remove(node.id);
-    await onRefresh();
-    if (node.id === activeId) router.push("/");
+    try {
+      await api.remove(node.id);
+      await onRefresh();
+      if (node.id === activeId) router.push("/");
+    } catch (cause) {
+      toast.show(cause instanceof Error ? cause.message : "刪除失敗", "error");
+    }
   };
 
   return (
     <div>
       <div
         className={`group flex items-center gap-1 rounded-md pr-1 text-sm transition ${
-          node.id === activeId ? "bg-[var(--surface-hover)] text-ink" : "text-ink-muted hover:bg-[var(--surface-hover)]"
+          node.id === activeId ? "bg-[var(--surface-hover)] text-ink" : "text-ink-muted hover-surface"
         }`}
         style={{ paddingLeft: depth * 14 }}
       >
@@ -139,13 +146,28 @@ function TreeItem({
           ＋
         </button>
         <button
-          onClick={() => void remove()}
+          onClick={() => setConfirming(true)}
           className="hidden shrink-0 rounded px-1 text-ink-faint hover:text-red-400 group-hover:block"
           title="刪除頁面"
         >
           ✕
         </button>
       </div>
+
+      {confirming && (
+        <ConfirmDialog
+          title={`刪除「${node.title || "無標題"}」？`}
+          body={
+            hasChildren
+              ? "底下的子頁面也會一起刪除。可以之後從垃圾桶還原。"
+              : "可以之後從垃圾桶還原。"
+          }
+          confirmLabel="刪除"
+          danger
+          onConfirm={remove}
+          onClose={() => setConfirming(false)}
+        />
+      )}
 
       {expanded &&
         node.children.map((child) => (

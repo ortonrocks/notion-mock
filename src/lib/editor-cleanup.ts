@@ -12,6 +12,8 @@
  * this does. It only ever touches blocks the AI just wrote.
  */
 
+import type { AppEditor } from "./editor-schema";
+
 type Inline = { type?: string; text?: string };
 
 type TableRow = { cells: unknown[] };
@@ -21,12 +23,6 @@ type AnyBlock = {
   type: string;
   content?: unknown;
   children?: AnyBlock[];
-};
-
-type EditorLike = {
-  document: AnyBlock[];
-  removeBlocks: (ids: string[]) => unknown;
-  replaceBlocks: (ids: string[], blocks: unknown[]) => unknown;
 };
 
 /** A paragraph that is nothing but one display equation. */
@@ -64,11 +60,14 @@ function isEmptyTable(block: AnyBlock): boolean {
  * Returns how many blocks were changed, so the caller can skip a save when
  * there was nothing to do.
  */
-export function cleanUpAfterAI(editor: EditorLike): number {
+export function cleanUpAfterAI(editor: AppEditor): number {
   const emptyTables: string[] = [];
   const equations: { id: string; latex: string }[] = [];
 
-  everyBlock(editor.document, (block) => {
+  // The walk only needs ids, types and content, and the schema's own block
+  // union is far more specific than that. One cast here beats threading the
+  // full generic through every helper.
+  everyBlock(editor.document as unknown as AnyBlock[], (block) => {
     if (isEmptyTable(block)) {
       emptyTables.push(block.id);
       return;

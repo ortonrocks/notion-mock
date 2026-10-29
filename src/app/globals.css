@@ -29,6 +29,17 @@
   --color-accent: var(--accent);
 }
 
+/*
+ * The hover tint is an alpha value, not a colour, so it has no place in
+ * `@theme` and there is no `bg-surface-hover` utility. This gives it one, so
+ * that every file is not spelling out the arbitrary-value form by hand.
+ */
+@utility hover-surface {
+  &:hover {
+    background-color: var(--surface-hover);
+  }
+}
+
 html,
 body {
   height: 100%;

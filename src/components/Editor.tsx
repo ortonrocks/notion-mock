@@ -1,13 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  BlockNoteSchema,
-  defaultBlockSpecs,
-  filterSuggestionItems,
-  insertOrUpdateBlockForSlashMenu,
-  type BlockNoteEditor,
-} from "@blocknote/core";
+import { filterSuggestionItems, insertOrUpdateBlockForSlashMenu } from "@blocknote/core";
 import {
   FormattingToolbar,
   FormattingToolbarController,
@@ -26,18 +20,13 @@ import { DefaultChatTransport } from "ai";
 import "@blocknote/core/fonts/inter.css";
 import "@blocknote/mantine/style.css";
 import "@blocknote/xl-ai/style.css";
-import { MathBlock } from "./MathBlock";
 import { api, ConflictError } from "@/lib/client-api";
 import { cleanUpAfterAI } from "@/lib/editor-cleanup";
+import { schema, type AppEditor } from "@/lib/editor-schema";
 
 const AUTOSAVE_DELAY_MS = 500;
 
 type SaveState = "idle" | "saving" | "saved" | "error" | "conflict";
-
-/** The default blocks plus the LaTeX equation block. */
-const schema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, math: MathBlock() },
-});
 
 /** Stores a pasted or dropped file and returns the URL the block points at. */
 async function uploadFile(file: File): Promise<string> {
@@ -61,7 +50,7 @@ export default function Editor({
   pageId: string;
   initialContent: unknown[];
   initialVersion: number;
-  onReady: (editor: BlockNoteEditor<never, never, never>) => void;
+  onReady: (editor: AppEditor) => void;
 }) {
   const transport = useMemo(
     () => new DefaultChatTransport({ api: "/api/ai/editor" }),
@@ -84,7 +73,7 @@ export default function Editor({
   });
 
   useEffect(() => {
-    onReady(editor as never);
+    onReady(editor);
   }, [editor, onReady]);
 
   // "closed" means no AI request is in flight and nothing is awaiting review.
@@ -171,7 +160,7 @@ export default function Editor({
     aiWasOpenRef.current = false;
 
     const timer = setTimeout(() => {
-      cleanUpAfterAI(editor as never);
+      cleanUpAfterAI(editor);
       void saveRef.current();
     }, 0);
     return () => clearTimeout(timer);
@@ -320,15 +309,21 @@ function AIReviewBar({
   ai,
 }: {
   status: "closed" | "user-input" | "thinking" | "ai-writing" | "user-reviewing" | "error";
-  ai: ReturnType<BlockNoteEditor<never, never, never>["getExtension"]> extends infer T ? T : never;
+  /**
+   * Only the review controls are used here, so only those are named.
+   * `getExtension` returns undefined if the extension is not registered.
+   */
+  ai:
+    | {
+        acceptChanges: () => void;
+        rejectChanges: () => void;
+        retry: () => Promise<void>;
+      }
+    | undefined;
 }) {
-  if (status === "closed" || status === "user-input") return null;
+  if (status === "closed" || status === "user-input" || !ai) return null;
 
-  const extension = ai as unknown as {
-    acceptChanges: () => void;
-    rejectChanges: () => void;
-    retry: () => Promise<void>;
-  };
+  const extension = ai;
 
   const busy = status === "thinking" || status === "ai-writing";
 
@@ -342,13 +337,13 @@ function AIReviewBar({
             <span className="text-red-300">AI 請求失敗</span>
             <button
               onClick={() => void extension.retry()}
-              className="rounded-full px-3 py-1 text-ink-muted transition hover:bg-[var(--surface-hover)] hover:text-ink"
+              className="rounded-full px-3 py-1 text-ink-muted transition hover-surface hover:text-ink"
             >
               重試
             </button>
             <button
               onClick={() => extension.rejectChanges()}
-              className="rounded-full px-3 py-1 text-ink-muted transition hover:bg-[var(--surface-hover)] hover:text-ink"
+              className="rounded-full px-3 py-1 text-ink-muted transition hover-surface hover:text-ink"
             >
               關閉
             </button>
@@ -360,7 +355,7 @@ function AIReviewBar({
             <span className="text-ink-muted">AI 的修改已標示在文件中</span>
             <button
               onClick={() => extension.rejectChanges()}
-              className="rounded-full px-3 py-1 text-ink-muted transition hover:bg-[var(--surface-hover)] hover:text-ink"
+              className="rounded-full px-3 py-1 text-ink-muted transition hover-surface hover:text-ink"
             >
               拒絕
             </button>

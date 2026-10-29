@@ -85,7 +85,7 @@ function MathBlockView({ block, editor }: MathBlockViewProps) {
         setDraft(latex);
         setEditing(true);
       }}
-      className="my-2 w-full cursor-pointer overflow-x-auto rounded-md px-3 py-2 text-center hover:bg-[var(--surface-hover)]"
+      className="my-2 w-full cursor-pointer overflow-x-auto rounded-md px-3 py-2 text-center hover-surface"
     >
       <MathOutput latex={latex} />
     </div>

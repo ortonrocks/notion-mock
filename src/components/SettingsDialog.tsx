@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api, type ApiKeyStatus } from "@/lib/client-api";
+import { Modal } from "./ui/Modal";
 
 /**
  * Sets the Claude API key without touching `.env.local` or restarting.
@@ -23,14 +24,6 @@ export default function SettingsDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
 
   const submit = async () => {
     setBusy(true);
@@ -61,15 +54,9 @@ export default function SettingsDialog({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[14vh]"
-      onClick={onClose}
-    >
-      <div
-        className="w-[520px] max-w-[90vw] rounded-xl border border-line bg-surface-1 p-5 shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <h2 className="text-base font-semibold text-ink">Claude API key</h2>
+    <Modal onClose={onClose} labelledBy="settings-title">
+      <div className="p-5">
+        <h2 id="settings-title" className="text-base font-semibold text-ink">Claude API key</h2>
         <p className="mt-1 text-xs text-ink-faint">
           存在本機資料庫，不會上傳到任何地方。設定後立即生效，不需要重啟。
         </p>
@@ -116,7 +103,7 @@ export default function SettingsDialog({
               <button
                 onClick={() => void clear()}
                 disabled={busy}
-                className="rounded-lg px-3 py-1.5 text-sm text-ink-muted transition hover:bg-[var(--surface-hover)] hover:text-ink disabled:opacity-50"
+                className="rounded-lg px-3 py-1.5 text-sm text-ink-muted transition hover-surface hover:text-ink disabled:opacity-50"
               >
                 清除
               </button>
@@ -131,6 +118,6 @@ export default function SettingsDialog({
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

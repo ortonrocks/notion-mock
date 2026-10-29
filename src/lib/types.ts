@@ -31,6 +31,7 @@ export type PageSummary = {
   parentId: string | null;
   title: string;
   icon: string | null;
+  sortOrder: number;
   updatedAt: number;
 };
 

@@ -150,7 +150,7 @@ export default function AIPanel({
         <span className="truncate text-xs text-ink-faint">· {pageTitle || "無標題"}</span>
         <button
           onClick={onClose}
-          className="ml-auto rounded px-1.5 py-1 text-ink-faint hover:bg-[var(--surface-hover)] hover:text-ink"
+          className="ml-auto rounded px-1.5 py-1 text-ink-faint hover-surface hover:text-ink"
           title="關閉面板"
         >
           ✕
@@ -170,7 +170,7 @@ export default function AIPanel({
                 <button
                   key={suggestion}
                   onClick={() => void send(suggestion)}
-                  className="block w-full rounded-md border border-line px-3 py-2 text-left text-sm text-ink-muted transition hover:bg-[var(--surface-hover)] hover:text-ink"
+                  className="block w-full rounded-md border border-line px-3 py-2 text-left text-sm text-ink-muted transition hover-surface hover:text-ink"
                 >
                   {suggestion}
                 </button>
