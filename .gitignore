@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local database
+/data
+!.env.example
+
+# demo recording leaves this behind when a step fails
+/demo-failure.png
