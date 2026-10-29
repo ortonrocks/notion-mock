@@ -2,25 +2,29 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import SearchDialog from "./SearchDialog";
 import TrashDialog from "./TrashDialog";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { useToast } from "./ui/Toast";
+import { useTreeDrag, type DropTarget } from "./useTreeDrag";
 import { api } from "@/lib/client-api";
-import type { PageTreeNode } from "@/lib/types";
+import type { PageSummary, PageTreeNode } from "@/lib/types";
 
 type Props = {
   tree: PageTreeNode[];
+  favorites: PageSummary[];
   activeId: string;
   onRefresh: () => Promise<void>;
   onCollapse: () => void;
 };
 
-export default function Sidebar({ tree, activeId, onRefresh, onCollapse }: Props) {
+export default function Sidebar({ tree, favorites, activeId, onRefresh, onCollapse }: Props) {
   const router = useRouter();
+  const toast = useToast();
   const [searchOpen, setSearchOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
+  const navRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -38,6 +42,30 @@ export default function Sidebar({ tree, activeId, onRefresh, onCollapse }: Props
     await onRefresh();
     router.push(`/page/${page.id}`);
   };
+
+  const drag = useTreeDrag({
+    tree,
+    scrollRef: navRef,
+    onMove: (id, target) => {
+      void api
+        .move(id, target)
+        .then(onRefresh)
+        .catch((cause: unknown) =>
+          toast.show(cause instanceof Error ? cause.message : "移動失敗", "error"),
+        );
+    },
+  });
+
+  const toggleFavorite = async (id: string, on: boolean) => {
+    try {
+      await api.favorite(id, on);
+      await onRefresh();
+    } catch (cause) {
+      toast.show(cause instanceof Error ? cause.message : "操作失敗", "error");
+    }
+  };
+
+  const favoriteIds = new Set(favorites.map((page) => page.id));
 
   return (
     <aside className="flex w-[260px] shrink-0 flex-col border-r border-line bg-surface-1">
@@ -70,7 +98,37 @@ export default function Sidebar({ tree, activeId, onRefresh, onCollapse }: Props
         </button>
       </div>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-6">
+      <nav ref={navRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-6">
+        {favorites.length > 0 && (
+          <>
+            <p className="px-2 py-2 text-xs font-medium text-ink-faint">我的最愛</p>
+            {favorites.map((page) => (
+              <Link
+                key={page.id}
+                href={`/page/${page.id}`}
+                className={`group flex items-center gap-1.5 rounded-md py-1 pl-5 pr-1 text-sm transition ${
+                  page.id === activeId
+                    ? "bg-[var(--surface-hover)] text-ink"
+                    : "text-ink-muted hover-surface"
+                }`}
+              >
+                <span className="shrink-0">{page.icon ?? "📄"}</span>
+                <span className="min-w-0 flex-1 truncate">{page.title || "無標題"}</span>
+                <button
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void toggleFavorite(page.id, false);
+                  }}
+                  className="hidden shrink-0 rounded px-1 text-ink-faint hover:text-ink group-hover:block"
+                  title="取消收藏"
+                >
+                  ★
+                </button>
+              </Link>
+            ))}
+          </>
+        )}
+
         <p className="px-2 py-2 text-xs font-medium text-ink-faint">頁面</p>
         {tree.length === 0 && <p className="px-2 py-1 text-sm text-ink-faint">還沒有任何頁面</p>}
         {tree.map((node) => (
@@ -79,8 +137,12 @@ export default function Sidebar({ tree, activeId, onRefresh, onCollapse }: Props
             node={node}
             depth={0}
             activeId={activeId}
+            isFavorite={favoriteIds.has(node.id)}
+            favoriteIds={favoriteIds}
             onRefresh={onRefresh}
             onCreateChild={createPage}
+            onToggleFavorite={toggleFavorite}
+            drag={drag}
           />
         ))}
       </nav>
@@ -101,18 +163,37 @@ export default function Sidebar({ tree, activeId, onRefresh, onCollapse }: Props
   );
 }
 
+type DragApi = ReturnType<typeof useTreeDrag>;
+
+/** The 2px line or ring showing where a dragged page would land. */
+function dropClasses(target: DropTarget, id: string): string {
+  if (target?.id !== id) return "";
+  if (target.position === "inside") return "ring-1 ring-inset ring-accent/70";
+  return target.position === "before"
+    ? "shadow-[inset_0_2px_0_0_var(--accent)]"
+    : "shadow-[inset_0_-2px_0_0_var(--accent)]";
+}
+
 function TreeItem({
   node,
   depth,
   activeId,
+  isFavorite,
+  favoriteIds,
   onRefresh,
   onCreateChild,
+  onToggleFavorite,
+  drag,
 }: {
   node: PageTreeNode;
   depth: number;
   activeId: string;
+  isFavorite: boolean;
+  favoriteIds: Set<string>;
   onRefresh: () => Promise<void>;
   onCreateChild: (parentId: string | null) => Promise<void>;
+  onToggleFavorite: (id: string, on: boolean) => Promise<void>;
+  drag: DragApi;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -130,12 +211,23 @@ function TreeItem({
     }
   };
 
+  // A page cannot be dropped inside itself, so the row is dimmed rather than
+  // letting the server reject it after the fact.
+  const blocked = drag.draggingId !== null && drag.isForbidden(node.id);
+
   return (
     <div>
       <div
+        draggable
+        onDragStart={(event) => drag.start(node.id, event)}
+        onDragEnd={drag.end}
+        onDragOver={(event) => drag.over(node.id, event)}
+        onDrop={drag.drop}
         className={`group flex items-center gap-1 rounded-md pr-1 text-sm transition ${
           node.id === activeId ? "bg-[var(--surface-hover)] text-ink" : "text-ink-muted hover-surface"
-        }`}
+        } ${drag.draggingId === node.id ? "opacity-40" : ""} ${
+          blocked && drag.draggingId !== node.id ? "opacity-30" : ""
+        } ${dropClasses(drag.dropTarget, node.id)}`}
         style={{ paddingLeft: depth * 14 }}
       >
         <button
@@ -151,6 +243,15 @@ function TreeItem({
           <span className="truncate">{node.title || "無標題"}</span>
         </Link>
 
+        <button
+          onClick={() => void onToggleFavorite(node.id, !isFavorite)}
+          className={`shrink-0 rounded px-1 hover:text-ink ${
+            isFavorite ? "text-ink-muted" : "hidden text-ink-faint group-hover:block"
+          }`}
+          title={isFavorite ? "取消收藏" : "加入我的最愛"}
+        >
+          {isFavorite ? "★" : "☆"}
+        </button>
         <button
           onClick={() => void onCreateChild(node.id)}
           className="hidden shrink-0 rounded px-1 text-ink-faint hover:text-ink group-hover:block"
@@ -189,8 +290,12 @@ function TreeItem({
             node={child}
             depth={depth + 1}
             activeId={activeId}
+            isFavorite={favoriteIds.has(child.id)}
+            favoriteIds={favoriteIds}
             onRefresh={onRefresh}
             onCreateChild={onCreateChild}
+            onToggleFavorite={onToggleFavorite}
+            drag={drag}
           />
         ))}
     </div>

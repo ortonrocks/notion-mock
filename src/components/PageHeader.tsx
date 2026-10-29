@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { Page } from "@/lib/types";
+import type { Page, PageSummary } from "@/lib/types";
+import Breadcrumbs from "./Breadcrumbs";
 
 type Props = {
   page: Page;
   title: string;
+  ancestors: PageSummary[];
   sidebarOpen: boolean;
   aiPanelOpen: boolean;
   onOpenSidebar: () => void;
@@ -36,6 +38,7 @@ const PAGE_ACTIONS = [
 export default function PageHeader({
   page,
   title,
+  ancestors,
   sidebarOpen,
   aiPanelOpen,
   onOpenSidebar,
@@ -70,8 +73,8 @@ export default function PageHeader({
         </button>
       )}
 
-      <span className="truncate text-ink-muted">{title || "無標題"}</span>
-      <span className="rounded px-1.5 py-0.5 text-xs text-ink-faint">🔒 Private</span>
+      <Breadcrumbs ancestors={ancestors} title={title} />
+      <span className="shrink-0 rounded px-1.5 py-0.5 text-xs text-ink-faint">🔒 Private</span>
 
       <div className="ml-auto flex items-center gap-1">
         {PAGE_ACTIONS.map((action) => (

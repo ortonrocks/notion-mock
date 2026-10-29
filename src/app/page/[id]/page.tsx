@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Workspace from "@/components/Workspace";
-import { ensureSeeded, getPage, listTree } from "@/lib/db";
+import { ensureSeeded, getAncestors, getPage, listFavorites, listTree } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -10,5 +10,13 @@ export default async function PageView({ params }: { params: Promise<{ id: strin
   const page = getPage(id);
   if (!page) notFound();
 
-  return <Workspace key={page.id} page={page} initialTree={listTree()} />;
+  return (
+    <Workspace
+      key={page.id}
+      page={page}
+      initialTree={listTree()}
+      initialFavorites={listFavorites()}
+      ancestors={getAncestors(page.id)}
+    />
+  );
 }

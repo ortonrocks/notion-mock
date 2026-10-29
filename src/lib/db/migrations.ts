@@ -87,6 +87,18 @@ export const MIGRATIONS: Migration[] = [
       db.exec("UPDATE pages SET trash_root_id = id WHERE deleted_at IS NOT NULL");
     },
   },
+  {
+    version: 3,
+    name: "favorites",
+    up: (db) => {
+      // NULL means "not a favourite". A REAL rather than a flag so favourites
+      // can be reordered the same way the tree is, without a second scheme.
+      db.exec("ALTER TABLE pages ADD COLUMN favorite_order REAL");
+      db.exec(
+        "CREATE INDEX IF NOT EXISTS pages_favorite_idx ON pages(favorite_order) WHERE favorite_order IS NOT NULL",
+      );
+    },
+  },
 ];
 
 const TARGET_VERSION = MIGRATIONS.reduce((max, step) => Math.max(max, step.version), 0);

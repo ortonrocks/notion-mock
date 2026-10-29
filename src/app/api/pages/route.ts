@@ -1,11 +1,11 @@
-import { createPage, ensureSeeded, listTree } from "@/lib/db";
+import { createPage, ensureSeeded, listFavorites, listTree } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   ensureSeeded();
-  return Response.json({ tree: listTree() });
+  return Response.json({ tree: listTree(), favorites: listFavorites() });
 }
 
 export async function POST(req: Request) {

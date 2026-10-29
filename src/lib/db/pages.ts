@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { blocksToPlainText, parseContent } from "../blocks";
 import type { Page, PageRow, PageSummary, PageTreeNode, SearchHit } from "../types";
 import { db } from "./connection";
+import { orderBetween } from "./ordering";
 
 /** Thrown when an update targets a version of the page that is no longer current. */
 export class VersionConflictError extends Error {
@@ -180,6 +181,91 @@ export function updatePage(
   });
 
   return apply();
+}
+
+/**
+ * Moves a page under a new parent and/or between two siblings.
+ *
+ * The caller names the neighbours it should land between, not a number: the
+ * browser's copy of the tree can be stale, and only the database knows the
+ * real `sort_order` values.
+ *
+ * This deliberately does not touch `version`. That tracks the document body,
+ * and an open editor would otherwise see a conflict because someone dragged
+ * the page in the sidebar.
+ */
+export function movePage(
+  id: string,
+  target: { parentId: string | null; afterId?: string | null; beforeId?: string | null },
+): Page | null {
+  const run = db.transaction((): Page | null => {
+    const existing = getPage(id);
+    if (!existing) return null;
+
+    if (target.parentId !== null && isDescendant(target.parentId, id)) {
+      throw new Error("不能把頁面移到自己的子頁面底下");
+    }
+
+    const order = orderBetween(target.parentId, target.afterId ?? null, target.beforeId ?? null);
+    db.prepare("UPDATE pages SET parent_id = ?, sort_order = ?, updated_at = ? WHERE id = ?").run(
+      target.parentId,
+      order,
+      Date.now(),
+      id,
+    );
+    return getPage(id);
+  });
+
+  return run();
+}
+
+/** The chain from the root down to this page's parent, for a breadcrumb. */
+export function getAncestors(id: string): PageSummary[] {
+  const rows = db
+    .prepare(
+      `WITH RECURSIVE chain(id, parent_id, title, icon, sort_order, updated_at, depth) AS (
+         SELECT id, parent_id, title, icon, sort_order, updated_at, 0
+           FROM pages WHERE id = ?
+         UNION ALL
+         SELECT p.id, p.parent_id, p.title, p.icon, p.sort_order, p.updated_at, chain.depth + 1
+           FROM pages p JOIN chain ON p.id = chain.parent_id
+          WHERE p.deleted_at IS NULL AND chain.depth < 64
+       )
+       SELECT id, parent_id, title, icon, sort_order, updated_at FROM chain
+        WHERE depth > 0
+        ORDER BY depth DESC`,
+    )
+    .all(id) as SummaryRow[];
+  return rows.map(toSummary);
+}
+
+export function listFavorites(): PageSummary[] {
+  const rows = db
+    .prepare(
+      `SELECT ${SUMMARY_COLUMNS} FROM pages
+        WHERE deleted_at IS NULL AND favorite_order IS NOT NULL
+        ORDER BY favorite_order ASC`,
+    )
+    .all() as SummaryRow[];
+  return rows.map(toSummary);
+}
+
+/** Adds or removes a page from the favourites list. */
+export function setFavorite(id: string, favorite: boolean): boolean {
+  const run = db.transaction(() => {
+    if (!favorite) {
+      return db.prepare("UPDATE pages SET favorite_order = NULL WHERE id = ?").run(id).changes > 0;
+    }
+    const { next } = db
+      .prepare("SELECT COALESCE(MAX(favorite_order), 0) + 1 AS next FROM pages")
+      .get() as { next: number };
+    return (
+      db
+        .prepare("UPDATE pages SET favorite_order = ? WHERE id = ? AND deleted_at IS NULL")
+        .run(next, id).changes > 0
+    );
+  });
+  return run();
 }
 
 /** True when `candidate` is `ancestor` itself or sits somewhere below it. */

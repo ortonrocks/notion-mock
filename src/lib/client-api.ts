@@ -1,4 +1,4 @@
-import type { Page, PageTreeNode, SearchHit, TrashEntry } from "./types";
+import type { Page, PageSummary, PageTreeNode, SearchHit, TrashEntry } from "./types";
 
 /** Raised when a save was built on a version the server has moved past. */
 export class ConflictError extends Error {
@@ -69,6 +69,18 @@ type PagePatch = {
 
 export const api = {
   tree: () => request<{ tree: PageTreeNode[] }>("/api/pages").then((r) => r.tree),
+
+  workspace: () =>
+    request<{ tree: PageTreeNode[]; favorites: PageSummary[] }>("/api/pages"),
+
+  move: (id: string, target: { parentId: string | null; afterId?: string | null; beforeId?: string | null }) =>
+    request<{ page: Page }>(`/api/pages/${id}/move`, {
+      method: "POST",
+      body: JSON.stringify(target),
+    }).then((r) => r.page),
+
+  favorite: (id: string, on: boolean) =>
+    request<{ favorite: boolean }>(`/api/pages/${id}/favorite`, { method: on ? "POST" : "DELETE" }),
 
   create: (input: { title?: string; parentId?: string | null } = {}) =>
     request<{ page: Page }>("/api/pages", { method: "POST", body: JSON.stringify(input) }).then((r) => r.page),

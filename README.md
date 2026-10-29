@@ -43,6 +43,11 @@ drag handles, code blocks with Shiki highlighting, and `/math` for a LaTeX
 equation. `Ctrl`+`K` searches titles and body text. Edits save half a second
 after you stop typing.
 
+The sidebar tree can be dragged: the top and bottom thirds of a row reorder,
+the middle third drops the page inside as a child. Starring a page pins it to a
+Favourites section above the tree, and the header shows the path down to
+whatever page you are on.
+
 Screenshots, images, video and PDFs can be pasted or dropped straight in. They
 are stored as files and served from `/api/files/`, not stuffed into the
 document JSON.
@@ -203,6 +208,10 @@ build 都不會影響，刪掉整個資料夾就是重來。
 用 [BlockNote](https://www.blocknotejs.org/)：巢狀區塊、斜線指令、拖曳把手、用
 Shiki 上色的程式碼區塊，以及 `/math` 插入 LaTeX 公式。`Ctrl`+`K` 搜尋標題和內文。
 停止輸入半秒後自動存檔。
+
+側欄的頁面樹可以拖曳：拖到一列的上三分之一或下三分之一是調整順序，拖到中間三分之一
+則是放進那一頁底下變成子頁面。按星號可以把頁面釘到樹上方的「我的最愛」，頁首則會顯示
+目前這一頁的所在路徑。
 
 截圖、圖片、影片和 PDF 可以直接貼上或拖進來。檔案會另外存起來、由 `/api/files/`
 提供，不會塞進文件的 JSON 裡。

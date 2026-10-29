@@ -8,7 +8,7 @@ import SettingsDialog from "./SettingsDialog";
 import { ToastProvider } from "./ui/Toast";
 import Sidebar from "./Sidebar";
 import { api, type ApiKeyStatus } from "@/lib/client-api";
-import type { Page, PageTreeNode } from "@/lib/types";
+import type { Page, PageSummary, PageTreeNode } from "@/lib/types";
 import type { AppEditor } from "@/lib/editor-schema";
 
 // BlockNote touches the DOM on construction, so it only runs in the browser.
@@ -22,11 +22,16 @@ const Editor = dynamic(() => import("./Editor"), {
 export default function Workspace({
   page,
   initialTree,
+  initialFavorites,
+  ancestors,
 }: {
   page: Page;
   initialTree: PageTreeNode[];
+  initialFavorites: PageSummary[];
+  ancestors: PageSummary[];
 }) {
   const [tree, setTree] = useState(initialTree);
+  const [favorites, setFavorites] = useState(initialFavorites);
   const [title, setTitle] = useState(page.title);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [aiPanelOpen, setAiPanelOpen] = useState(true);
@@ -45,7 +50,9 @@ export default function Workspace({
   }, []);
 
   const refreshTree = useCallback(async () => {
-    setTree(await api.tree());
+    const { tree: next, favorites: nextFavorites } = await api.workspace();
+    setTree(next);
+    setFavorites(nextFavorites);
   }, []);
 
   const handleTitleChange = useCallback(
@@ -84,6 +91,7 @@ export default function Workspace({
         {sidebarOpen && (
           <Sidebar
             tree={tree}
+            favorites={favorites}
             activeId={page.id}
             onRefresh={refreshTree}
             onCollapse={() => setSidebarOpen(false)}
@@ -93,6 +101,7 @@ export default function Workspace({
         <main className="flex min-w-0 flex-1 flex-col">
           <PageHeader
             page={page}
+            ancestors={ancestors}
             title={title}
             sidebarOpen={sidebarOpen}
             aiPanelOpen={aiPanelOpen}
