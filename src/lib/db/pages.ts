@@ -97,10 +97,13 @@ export function createPage(
   // Reading MAX(sort_order) and inserting have to be one unit, or two pages
   // created at the same moment both land on the same position.
   const insert = db.transaction(() => {
+    // Trashed siblings are counted on purpose. Skipping them would hand this
+    // page a position one of them already holds, and restoring that one would
+    // then land two pages on the same number.
     const { next } = db
       .prepare(
         `SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM pages
-         WHERE deleted_at IS NULL AND parent_id IS ?`,
+         WHERE parent_id IS ?`,
       )
       .get(parentId) as { next: number };
 
@@ -195,7 +198,12 @@ export function isDescendant(candidate: string, ancestor: string): boolean {
   return false;
 }
 
-/** Soft-deletes a page and everything nested under it. */
+/**
+ * Soft-deletes a page and everything nested under it.
+ *
+ * Every row gets `trash_root_id = id`, so the trash can list the one page the
+ * user actually deleted and restore brings the whole subtree back together.
+ */
 export function deletePage(id: string): boolean {
   const now = Date.now();
   const ids: string[] = [];
@@ -209,10 +217,12 @@ export function deletePage(id: string): boolean {
     queue.push(...children.map((c) => c.id));
   }
 
-  const stmt = db.prepare("UPDATE pages SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL");
+  const stmt = db.prepare(
+    "UPDATE pages SET deleted_at = ?, trash_root_id = ? WHERE id = ? AND deleted_at IS NULL",
+  );
   const run = db.transaction((targets: string[]) => {
     let changed = 0;
-    for (const target of targets) changed += stmt.run(now, target).changes;
+    for (const target of targets) changed += stmt.run(now, id, target).changes;
     return changed;
   });
   return run(ids) > 0;
@@ -253,7 +263,12 @@ const WELCOME_BLOCKS = [
 
 /** Gives a brand new database one page so the workspace is never empty. */
 export function ensureSeeded(): void {
-  const { count } = db.prepare("SELECT COUNT(*) AS count FROM pages").get() as { count: number };
+  // Only live pages count. Counting trashed ones too would leave a workspace
+  // whose only page was deleted permanently empty, with no way to get a page
+  // back from the landing redirect.
+  const { count } = db
+    .prepare("SELECT COUNT(*) AS count FROM pages WHERE deleted_at IS NULL")
+    .get() as { count: number };
   if (count > 0) return;
   const page = createPage({ title: "快速開始", icon: "👋" });
   updatePage(page.id, { content: WELCOME_BLOCKS });

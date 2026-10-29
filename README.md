@@ -47,6 +47,11 @@ Screenshots, images, video and PDFs can be pasted or dropped straight in. They
 are stored as files and served from `/api/files/`, not stuffed into the
 document JSON.
 
+Deleting a page puts it in the trash at the bottom of the sidebar, along with
+whatever was nested under it. Restoring brings the whole subtree back. If its
+parent was deleted separately and is still in the trash, the page comes back at
+the top level instead, and says so.
+
 ## AI
 
 There are four ways to reach it: **Ask AI** in the slash menu, the AI button in
@@ -201,6 +206,9 @@ Shiki 上色的程式碼區塊，以及 `/math` 插入 LaTeX 公式。`Ctrl`+`K`
 
 截圖、圖片、影片和 PDF 可以直接貼上或拖進來。檔案會另外存起來、由 `/api/files/`
 提供，不會塞進文件的 JSON 裡。
+
+刪除頁面會連同底下的子頁面一起進到側欄最下方的垃圾桶，還原時整棵子樹會一起回來。
+如果它的上層頁面是另外被刪掉、而且還在垃圾桶裡，這一頁會還原到最外層並且告訴你。
 
 ## AI
 

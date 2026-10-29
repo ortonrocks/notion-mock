@@ -67,6 +67,26 @@ export const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 2,
+    name: "trash-roots",
+    up: (db) => {
+      // Which page's deletion put this row in the trash. A row is a trash
+      // *entry* when it points at itself, and restoring one is a single
+      // indexed lookup for everything that went down with it. Without it,
+      // deleting a subtree is indistinguishable from deleting each page in
+      // it, and restore cannot tell what to bring back.
+      db.exec("ALTER TABLE pages ADD COLUMN trash_root_id TEXT");
+      db.exec(
+        "CREATE INDEX IF NOT EXISTS pages_trash_idx ON pages(trash_root_id) WHERE deleted_at IS NOT NULL",
+      );
+
+      // Pages trashed before this column existed have no root recorded.
+      // Treating each as its own entry is the only answer that loses nothing:
+      // they all show up in the trash and can each be restored.
+      db.exec("UPDATE pages SET trash_root_id = id WHERE deleted_at IS NOT NULL");
+    },
+  },
 ];
 
 const TARGET_VERSION = MIGRATIONS.reduce((max, step) => Math.max(max, step.version), 0);
@@ -87,8 +107,10 @@ function backup(db: Database.Database, file: string, from: number) {
   const dir = path.join(path.dirname(file), "backups");
   fs.mkdirSync(dir, { recursive: true });
 
+  // `VACUUM INTO` refuses to overwrite, and more than one process can reach
+  // this line in the same second, so the name needs more than a timestamp.
   const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
-  const target = path.join(dir, `notion-v${from}-${stamp}.db`);
+  const target = path.join(dir, `notion-v${from}-${stamp}-${process.pid}.db`);
   db.prepare("VACUUM INTO ?").run(target);
 
   const old = fs
@@ -121,9 +143,19 @@ export function runMigrations(db: Database.Database, file: string): void {
     if (from >= TARGET_VERSION) return;
 
     // Version 0 is a database with nothing in it worth saving.
+    //
+    // A failed backup must not stop the upgrade. `next` runs several workers
+    // against this file and they all arrive here; the one that loses the race
+    // would otherwise throw on import and take the route down with it. The
+    // migration itself is safe either way — each step re-checks the version
+    // while holding the write lock.
     if (from > 0) {
-      const target = backup(db, file, from);
-      console.log(`[db] 升級 v${from} → v${TARGET_VERSION}，已備份到 ${target}`);
+      try {
+        const target = backup(db, file, from);
+        console.log(`[db] 升級 v${from} → v${TARGET_VERSION}，已備份到 ${target}`);
+      } catch (cause) {
+        console.warn(`[db] 升級前備份失敗，繼續升級：${cause instanceof Error ? cause.message : cause}`);
+      }
     }
 
     for (const step of MIGRATIONS) {

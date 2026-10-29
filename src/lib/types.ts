@@ -43,3 +43,13 @@ export type SearchHit = {
   icon: string | null;
   snippet: string;
 };
+
+/** A page sitting in the trash, with the size of what it took down with it. */
+export type TrashEntry = {
+  id: string;
+  title: string;
+  icon: string | null;
+  deletedAt: number;
+  /** How many nested pages were deleted along with this one. */
+  descendants: number;
+};

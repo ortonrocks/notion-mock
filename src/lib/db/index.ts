@@ -20,3 +20,5 @@ export {
   updatePage,
 } from "./pages";
 export { deleteSetting, getSetting, setSetting } from "./settings";
+export { NotATrashRootError, emptyTrash, listTrash, purgePage, restorePage } from "./trash";
+export { hasOrderCollision, rebalanceSiblings } from "./ordering";

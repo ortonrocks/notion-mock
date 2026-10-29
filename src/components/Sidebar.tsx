@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import SearchDialog from "./SearchDialog";
+import TrashDialog from "./TrashDialog";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { useToast } from "./ui/Toast";
 import { api } from "@/lib/client-api";
@@ -19,6 +20,7 @@ type Props = {
 export default function Sidebar({ tree, activeId, onRefresh, onCollapse }: Props) {
   const router = useRouter();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -83,7 +85,18 @@ export default function Sidebar({ tree, activeId, onRefresh, onCollapse }: Props
         ))}
       </nav>
 
+      <div className="border-t border-line px-3 py-2">
+        <button
+          onClick={() => setTrashOpen(true)}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-ink-muted transition hover-surface hover:text-ink"
+        >
+          <span>🗑️</span>
+          <span className="flex-1">垃圾桶</span>
+        </button>
+      </div>
+
       {searchOpen && <SearchDialog onClose={() => setSearchOpen(false)} />}
+      {trashOpen && <TrashDialog onClose={() => setTrashOpen(false)} onRestored={onRefresh} />}
     </aside>
   );
 }
