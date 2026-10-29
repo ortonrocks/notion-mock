@@ -28,6 +28,7 @@ import "@blocknote/mantine/style.css";
 import "@blocknote/xl-ai/style.css";
 import { MathBlock } from "./MathBlock";
 import { api, ConflictError } from "@/lib/client-api";
+import { cleanUpAfterAI } from "@/lib/editor-cleanup";
 
 const AUTOSAVE_DELAY_MS = 500;
 
@@ -152,14 +153,29 @@ export default function Editor({
     saveTimer.current = setTimeout(() => void save(), AUTOSAVE_DELAY_MS);
   };
 
-  // Once a review closes, whatever the user accepted is owed to the database.
+  // Whether the AI has been open since the last time this ran. Without it the
+  // effect below would also fire on mount, when there is nothing to clean up
+  // and nothing to save.
+  const aiWasOpenRef = useRef(false);
+
+  // Once a review closes, whatever the user accepted is owed to the database,
+  // after the pass that repairs the two things the AI's HTML cannot express.
   // Going through a timer keeps the write out of the render pass, and keying
   // only on `aiStatus` stops it re-firing whenever `save` is rebuilt.
   useEffect(() => {
-    if (aiStatus !== "closed") return;
-    const timer = setTimeout(() => void saveRef.current(), 0);
+    if (aiStatus !== "closed") {
+      aiWasOpenRef.current = true;
+      return;
+    }
+    if (!aiWasOpenRef.current) return;
+    aiWasOpenRef.current = false;
+
+    const timer = setTimeout(() => {
+      cleanUpAfterAI(editor as never);
+      void saveRef.current();
+    }, 0);
     return () => clearTimeout(timer);
-  }, [aiStatus]);
+  }, [aiStatus, editor]);
 
   // A debounced save that has not fired yet is still owed. Without this,
   // navigating away or hiding the tab within the debounce window loses the edit.
@@ -181,11 +197,18 @@ export default function Editor({
     };
   }, []);
 
+  // A conflict means this copy cannot be saved. Reloading is the way out, so
+  // there has to be a way to take your unsaved work with you first.
+  const copyDocument = useCallback(() => {
+    const markdown = editor.blocksToMarkdownLossy(editor.document);
+    return navigator.clipboard.writeText(markdown);
+  }, [editor]);
+
   const ai = editor.getExtension(AIExtension);
 
   return (
     <>
-      <SaveIndicator state={saveState} />
+      <SaveIndicator state={saveState} onCopy={copyDocument} />
       <AIReviewBar status={aiStatus} ai={ai} />
       <BlockNoteView
         editor={editor}
@@ -238,7 +261,9 @@ export default function Editor({
  * A conflict is the loud case: the page has been written from somewhere else
  * (another tab, usually), so saving stops entirely rather than overwriting it.
  */
-function SaveIndicator({ state }: { state: SaveState }) {
+function SaveIndicator({ state, onCopy }: { state: SaveState; onCopy: () => Promise<void> }) {
+  const [copied, setCopied] = useState(false);
+
   if (state === "conflict") {
     return (
       <div className="fixed inset-x-0 top-4 z-50 flex justify-center">
@@ -246,6 +271,14 @@ function SaveIndicator({ state }: { state: SaveState }) {
           <span className="text-amber-200">
             這一頁在別的地方被修改過，為了不覆蓋掉那邊的內容，已停止自動儲存
           </span>
+          <button
+            onClick={() => {
+              void onCopy().then(() => setCopied(true));
+            }}
+            className="rounded-full px-3 py-1 text-amber-200 transition hover:bg-amber-500/20"
+          >
+            {copied ? "已複製" : "複製這邊的內容"}
+          </button>
           <button
             onClick={() => window.location.reload()}
             className="rounded-full bg-amber-500/80 px-3 py-1 font-medium text-black transition hover:brightness-110"

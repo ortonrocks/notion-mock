@@ -1,23 +1,13 @@
 # Notion Mock
 
-A local, single-user notebook in the style of Notion, with Claude wired into the
-editor. You bring your own API key, so there is no seat price and no AI quota.
+A Notion-style notebook that runs on your own machine, for one person, with
+Claude built into the editor. You bring your own API key.
 
-[繁體中文說明在下方](#notion-mock-中文說明)
+![Writing a page: a heading, a LaTeX equation, a Python code block, then Claude rewriting the page and the change being accepted](docs/demo.gif)
 
-![A page being written, with a code block, a LaTeX equation, and the AI proposing an edit that is accepted](docs/demo.gif)
+[繁體中文](#notion-mock-中文說明)
 
-## Why
-
-I wanted Notion's block editor with an AI that can actually change the page —
-not just autocomplete next to it — and I did not want a subscription or a
-monthly cap on how often I can ask. So this runs on your machine, keeps
-everything in one SQLite file, and talks to Claude with your key.
-
-It is not trying to be Notion. There is no sharing, no collaboration, no mobile
-app. It is a good notebook for one person.
-
-## Getting started
+## Running it
 
 ```bash
 npm install
@@ -25,59 +15,62 @@ echo "ANTHROPIC_API_KEY=sk-ant-..." > .env.local
 npm run dev
 ```
 
-Open http://localhost:3000. The first run creates a starter page.
+Then open http://localhost:3000. The first run creates a starter page.
 
-Everything lives in `data/notion.db` and `data/uploads/`, both ignored by git.
-Delete the directory to start over; copy it to back up.
+The server listens on 127.0.0.1 only, so nothing on your network can reach it.
+Pass `-H 0.0.0.0` if you actually want that, but read the last section first.
+
+Your notes live in `data/notion.db` and `data/uploads/`, both gitignored, and
+they stay there across restarts and rebuilds. Delete the directory to start
+over.
+
+To back up, copy the whole `data/` directory, not just the `.db` file. SQLite
+runs in WAL mode here, so recent writes sit in `notion.db-wal` until they are
+checkpointed — the `.db` file on its own can be almost empty.
 
 ### The API key
 
-You can skip `.env.local` and set the key from the gear icon in the page header
-instead. It is checked against the API before being saved, stored in the local
-database, and applies to the next request — no restart. A key set there wins
-over the environment, and the browser is only ever told the last four
+You can skip `.env.local` and set the key from the gear icon in the header. It
+gets checked against the API before it is stored, goes into the local database,
+and is picked up by the next request without a restart. A key set there wins
+over the environment variable, and the browser is only ever told the last four
 characters.
 
-## What it does
+## The editor
 
-The editor is [BlockNote](https://www.blocknotejs.org/) — nested blocks, slash
-commands, drag handles, code blocks with Shiki highlighting, and a LaTeX block
-via `/math`. The sidebar holds a nested page tree, and `Ctrl`+`K` searches
-titles and body text. Edits autosave half a second after you stop typing.
+[BlockNote](https://www.blocknotejs.org/), so: nested blocks, slash commands,
+drag handles, code blocks with Shiki highlighting, and `/math` for a LaTeX
+equation. `Ctrl`+`K` searches titles and body text. Edits save half a second
+after you stop typing.
 
-You can paste or drop screenshots, images, video and PDFs straight into a page.
-They are stored as files and served from `/api/files/`, not inlined into the
+Screenshots, images, video and PDFs can be pasted or dropped straight in. They
+are stored as files and served from `/api/files/`, not stuffed into the
 document JSON.
 
-### AI
+## AI
 
-Four entry points, all of them preview-before-apply:
+There are four ways to reach it: **Ask AI** in the slash menu, the AI button in
+the selection toolbar, the summarise and translate buttons in the page header,
+and the chat panel on the right.
 
-| Where | How |
-|---|---|
-| Slash menu | Type `/` then **Ask AI** |
-| Selection | Select text, press the AI button in the toolbar |
-| Whole page | Summarize or translate from the page header |
-| Chat panel | On the right, with tools over the workspace |
+All four work the same way. The change shows up as a highlighted diff in the
+document, nothing is written to the database until you accept it, and autosave
+pauses while a change is waiting on you.
 
-Every change the AI makes arrives as a highlighted diff in the document. Nothing
-is written to the database until you accept it, and autosave is suspended while
-a change is waiting for review.
-
-The chat agent gets four tools, and only one of them can touch your content:
-
-- `read_current_page` — read the page you are on
-- `search_pages` — search the workspace, read-only
-- `read_page` — read any other page, read-only
-- `propose_edit` — suggest a change to **the current page**; this does not write
-  anything, it hands the instruction back to the editor's review flow
-
-There is no tool that modifies another page.
+The chat agent has four tools, and only one of them can touch your content:
+`read_current_page`, `search_pages` and `read_page` are read-only, and
+`propose_edit` suggests a change to the page you are on — it writes nothing,
+it hands the instruction back to the editor's review flow. No tool can modify
+a different page.
 
 Both AI routes also send the images a page references (PNG, JPEG, GIF, WebP, up
-to eight per request) as real vision input, so a summary or a rewrite takes the
-content of your screenshots into account instead of seeing an empty `<img>` tag.
-See `src/lib/ai/images.ts`.
+to eight per request) as real vision input, so a summary takes the content of
+your screenshots into account instead of seeing an empty `<img>` tag.
+
+Because the in-editor AI speaks HTML, two things come back wrong and get
+repaired once you accept: a markdown table arrives as a table block with no
+cells, and an equation arrives as `$$...$$` sitting in a paragraph. See
+`src/lib/editor-cleanup.ts`.
 
 ## Layout
 
@@ -89,100 +82,93 @@ src/
     api/search             search
     api/upload             paste / drop uploads
     api/files/[name]       serves uploaded files
+    api/settings           reads and sets the API key
     api/ai/editor          in-editor AI (BlockNote xl-ai protocol)
     api/ai/chat            chat agent (SSE + tool-use loop)
   components/
     Workspace.tsx          three-pane shell, owns the editor instance
     Sidebar.tsx            page tree
-    Editor.tsx             BlockNote + AI extension
+    Editor.tsx             BlockNote + AI extension, autosave
     MathBlock.tsx          KaTeX equation block
     AIPanel.tsx            chat panel
     PageHeader.tsx         whole-page AI actions
+    SettingsDialog.tsx     API key
   lib/
     db.ts                  SQLite layer
     blocks.ts              block JSON to markdown
     uploads.ts             upload storage
+    editor-cleanup.ts      repairs what the AI's HTML cannot express
+    settings.ts            where the API key is read from and stored
     ai/images.ts           page images to Claude vision input
-    ai/models.ts           model ids (change them here)
+    ai/models.ts           model ids
     ai/tools.ts            agent tool definitions
     ai/prompts.ts          agent system prompt
-    settings.ts            where the API key is read from and stored
 scripts/
   record-demo.mjs          regenerates docs/demo.gif
 ```
 
-`npm run demo` re-records the GIF above. It builds the app, runs it against a
+`npm run demo` re-records the GIF. It builds the app, runs it against a
 throwaway database in your temp directory so none of your own notes can appear
-in it, drives Chromium through the script, and converts the capture with
-ffmpeg. The AI steps make real API calls.
+in it, drives Chromium through a script, and converts the capture with ffmpeg.
+The AI steps make real API calls, on Sonnet rather than the Opus default, since
+every second it spends thinking is a second of GIF.
+
+## Models
+
+Both routes default to `claude-opus-5-5`. Change them in `src/lib/ai/models.ts`
+or set `CLAUDE_CHAT_MODEL` / `CLAUDE_EDITOR_MODEL`. Opus is the expensive
+option: `claude-sonnet-5-5` is about half the price, `claude-haiku-5-5` a
+fraction of it.
 
 ## Two SDKs, on purpose
 
 `api/ai/chat` uses the official `@anthropic-ai/sdk` and runs its own tool-use
 loop, which makes it easy to stream each step to the browser over SSE.
 
-`api/ai/editor` uses Vercel's `@ai-sdk/anthropic` instead, because
-`@blocknote/xl-ai` is built on the AI SDK and its streaming and diff protocol
-has to be spoken exactly.
+`api/ai/editor` uses Vercel's `@ai-sdk/anthropic`, because `@blocknote/xl-ai`
+is built on the AI SDK and its streaming and diff protocol has to be spoken
+exactly. `ai` is pinned to v6 with `@ai-sdk/anthropic` v3 for the same reason:
+v7 leaves two copies of `ai` in the tree and the protocol breaks in ways the
+error message gives no hint about. Run `npm ls ai` if you touch those versions.
 
-`ai` is pinned to v6 with `@ai-sdk/anthropic` v3 for the same reason. Upgrading
-to v7 leaves two copies of `ai` in the tree and the protocol breaks in ways that
-are not obvious from the error. If you touch those versions, check `npm ls ai`
-afterwards.
+## What it does not do
 
-## Models
+No accounts, no permissions. It assumes one person on one machine, which is why
+the server binds to localhost.
 
-Defaults to `claude-opus-5-5` for both routes. Change them in
-`src/lib/ai/models.ts`, or set `CLAUDE_CHAT_MODEL` / `CLAUDE_EDITOR_MODEL` in
-`.env.local`. Opus is the expensive option — `claude-sonnet-5-5` is half the
-price and `claude-haiku-5-5` is a fraction of it.
+Two tabs on the same page will not merge. The body carries a version number and
+a save built on a stale one is rejected, so the second tab cannot overwrite the
+first without telling you. You get a bar offering to copy your text to the
+clipboard before you reload.
 
-## Known limitations
+Search is a `LIKE` scan over every row, and that is on purpose. SQLite's FTS5
+cannot tokenise Chinese: the default tokeniser swallows a run of Chinese as a
+single token and matches nothing at all, and the trigram tokeniser needs three
+characters, so a two-character word finds nothing. A scan is slower in theory
+and correct in practice. It will start to matter somewhere past a few thousand
+pages.
 
-These are real and I have not fixed them yet.
-
-- **No auth.** It assumes one person on one machine. Do not put it on the open
-  internet as it stands.
-- **Concurrent edits stop, they do not merge.** Each page body carries a
-  version; a save built on a stale one is rejected and autosave halts with a
-  prompt to reload. That protects you from the second tab quietly overwriting
-  the first, but there is no merging — one side reloads and loses its
-  unsaved edits.
-- **Search is a `LIKE` scan**, so it reads every row. Fine for a few hundred
-  pages, not for ten thousand.
-- The in-editor AI works in HTML, so it cannot produce math blocks. Insert those
-  yourself with `/math`.
-- The AI occasionally emits a markdown table that converts into an empty 1x1
-  table block. Select it and delete it.
+No sharing, no real-time collaboration, no mobile app.
 
 ## License
 
-`@blocknote/xl-ai` is GPL-3.0 OR PROPRIETARY (BlockNote's core is MPL-2.0), so
-this project is GPL-3.0. Distributing a closed-source build would need a
-commercial license from BlockNote, or a diff-preview layer written from scratch.
+GPL-3.0, because `@blocknote/xl-ai` is GPL-3.0 OR PROPRIETARY (BlockNote's core
+is MPL-2.0). A closed-source build would need a commercial license from
+BlockNote, or a diff-preview layer written from scratch.
 
-Not affiliated with, endorsed by, or connected to Notion Labs, Inc. "Notion" is
-their trademark; this project only borrows the layout.
+Not affiliated with or endorsed by Notion Labs, Inc. "Notion" is their
+trademark; this borrows the layout.
 
 ---
 
 # Notion Mock 中文說明
 
-一個本機、單人使用的 Notion 風格筆記本，編輯器內建 Claude。你用自己的 API
-key，所以沒有月費，也沒有 AI 使用額度。
+一個跑在自己電腦上的 Notion 風格筆記本，單人使用，編輯器內建 Claude，用你自己的
+API key。
 
-![編輯頁面，依序示範程式碼區塊、LaTeX 公式，以及 AI 提出修改後按下接受](docs/demo.gif)
+![示範：寫標題、插入 LaTeX 公式與 Python 程式碼區塊，再讓 Claude 改寫整頁並按下接受](docs/demo.gif)
 
-## 為什麼做這個
-
-我想要 Notion 的區塊編輯器，搭配一個**真的能改動頁面**的 AI——不是在旁邊幫你
-自動補字而已——而且不想為此付訂閱費，或是每個月被限制能問幾次。所以這個東西跑
-在你自己的電腦上，資料放在一個 SQLite 檔案裡，用你自己的 key 呼叫 Claude。
-
-它沒有要變成 Notion。沒有分享、沒有協作、沒有手機 app。它是一個給一個人用的、
-好用的筆記本。
-
-## 開始使用
+## 怎麼跑起來
 
 ```bash
 npm install
@@ -190,99 +176,93 @@ echo "ANTHROPIC_API_KEY=sk-ant-..." > .env.local
 npm run dev
 ```
 
-打開 http://localhost:3000，第一次啟動會自動建立一頁範例。
+打開 http://localhost:3000，第一次啟動會建立一頁範例。
 
-所有東西都在 `data/notion.db` 和 `data/uploads/`，兩個都已經被 git 忽略。想重來
-就刪掉整個資料夾，想備份就整個複製走。
+伺服器只聽 127.0.0.1，同網段的其他裝置連不進來。真的需要的話可以自己加
+`-H 0.0.0.0`，但建議先看完最後一節。
+
+筆記放在 `data/notion.db` 和 `data/uploads/`，兩個都已經被 git 忽略，重啟或重新
+build 都不會影響，刪掉整個資料夾就是重來。
+
+備份請複製整個 `data/` 資料夾，不要只複製 `.db` 檔。這裡的 SQLite 跑在 WAL 模式，
+剛寫入的東西會先待在 `notion.db-wal` 裡等待合併，單獨一個 `.db` 檔可能幾乎是空的。
 
 ### 關於 API key
 
-你也可以完全不碰 `.env.local`，直接點頁首的齒輪設定。送出時會先向 API 驗證過才
-存進本機資料庫，下一個請求就生效，**不需要重啟**。在這裡設定的 key 優先於環境
-變數，而且瀏覽器永遠只會拿到最後四碼。
+也可以完全不碰 `.env.local`，直接點頁首的齒輪設定。送出時會先向 API 驗證過才存進
+本機資料庫，下一個請求就生效，不需要重啟。在這裡設定的 key 優先於環境變數，而且
+瀏覽器永遠只會拿到最後四碼。
 
-## 功能
+## 編輯器
 
-編輯器是 [BlockNote](https://www.blocknotejs.org/)：巢狀區塊、斜線指令、拖曳
-把手、用 Shiki 上色的程式碼區塊，以及用 `/math` 插入的 LaTeX 公式區塊。左側欄
-是巢狀頁面樹，`Ctrl`+`K` 可以搜尋標題和內文。停止輸入半秒後自動存檔。
+用 [BlockNote](https://www.blocknotejs.org/)：巢狀區塊、斜線指令、拖曳把手、用
+Shiki 上色的程式碼區塊，以及 `/math` 插入 LaTeX 公式。`Ctrl`+`K` 搜尋標題和內文。
+停止輸入半秒後自動存檔。
 
-截圖、圖片、影片和 PDF 都可以直接貼上或拖進頁面。檔案會另外存起來、由
-`/api/files/` 提供，不會塞進文件的 JSON 裡。
+截圖、圖片、影片和 PDF 可以直接貼上或拖進來。檔案會另外存起來、由 `/api/files/`
+提供，不會塞進文件的 JSON 裡。
 
-### AI
+## AI
 
-四個入口，全部都是先預覽再套用：
+四個入口：斜線選單裡的 **Ask AI**、選取文字後工具列上的 AI 按鈕、頁首的摘要與翻譯、
+右側的對話面板。
 
-| 位置 | 操作 |
-|---|---|
-| 斜線選單 | 輸入 `/` 之後選 **Ask AI** |
-| 選取文字 | 選起來，按工具列上的 AI 按鈕 |
-| 整頁 | 頁首的摘要／翻譯 |
-| 對話面板 | 右側，可以操作整個工作區 |
+四個走的是同一套流程。修改會以差異標示出現在文件裡，你按下接受之前不會有任何東西
+寫進資料庫，等待審核期間自動存檔也會暫停。
 
-AI 做的每一處修改都會以差異標示出現在文件裡。**你按下接受之前，不會有任何東西
-寫進資料庫**，而且在等待審核期間自動存檔會暫停。
+對話 agent 有四個工具，只有一個碰得到你的內容：`read_current_page`、`search_pages`、
+`read_page` 都是唯讀，`propose_edit` 則是對你正在看的這一頁提出修改建議，它本身不
+寫入任何東西，只是把指令交回給編輯器的審核流程。沒有任何工具可以改動其他頁面。
 
-對話 agent 有四個工具，其中只有一個碰得到你的內容：
+兩條路線都會把頁面引用到的圖片（PNG、JPEG、GIF、WebP，單次最多八張）當成真正的影像
+輸入送出去，所以摘要會把你截圖裡的內容算進去，而不是只看到一個空的 `<img>` 標籤。
 
-- `read_current_page` — 讀你正在看的這一頁
-- `search_pages` — 搜尋整個工作區，唯讀
-- `read_page` — 讀其他任何一頁，唯讀
-- `propose_edit` — 對**目前這一頁**提出修改建議。它不會寫入任何東西，只是把指令
-  交回給編輯器的審核流程
-
-沒有任何工具可以改動其他頁面。
-
-兩條 AI 路線都會把頁面引用到的圖片（PNG、JPEG、GIF、WebP，單次最多八張）當成
-真正的影像輸入送出去，所以摘要或改寫會把你截圖裡的內容算進去，而不是只看到一個
-空的 `<img>` 標籤。實作在 `src/lib/ai/images.ts`。
+編輯器內的 AI 以 HTML 溝通，所以有兩樣東西回來時是壞的，會在你接受之後自動修掉：
+markdown 表格會變成沒有儲存格的表格區塊，公式會變成段落裡的一串 `$$...$$`。實作在
+`src/lib/editor-cleanup.ts`。
 
 ## 專案結構
 
-見上方英文版的 Layout 一節。
+見上方英文版的 Layout。
 
-`npm run demo` 可以重新錄製上面那張 GIF：它會建置、用你暫存目錄裡一個全新的資料庫
-跑起來（所以你自己的筆記不可能入鏡），用腳本操作 Chromium，再用 ffmpeg 轉檔。
-其中 AI 的部分會真的呼叫 API。
-
-## 為什麼用了兩套 SDK
-
-這是刻意的。
-
-`api/ai/chat` 用官方的 `@anthropic-ai/sdk`，自己跑 tool use 迴圈，這樣比較容易
-把每一步透過 SSE 串到瀏覽器顯示。
-
-`api/ai/editor` 改用 Vercel 的 `@ai-sdk/anthropic`，因為 `@blocknote/xl-ai`
-是建在 AI SDK 上的，它的串流和差異預覽協定必須照規格走。
-
-`ai` 固定在 v6、搭配 `@ai-sdk/anthropic` v3，原因相同。升到 v7 會讓相依樹裡同時
-存在兩份 `ai`，協定壞掉的方式從錯誤訊息完全看不出來。如果你動了這些版本，記得
-事後跑一次 `npm ls ai` 確認。
+`npm run demo` 會重錄那張 GIF：建置、用暫存目錄裡一個全新的資料庫跑起來（所以你的
+筆記不可能入鏡）、用腳本操作 Chromium，再用 ffmpeg 轉檔。AI 的部分會真的呼叫 API，
+而且走 Sonnet 而不是預設的 Opus，因為它多想一秒，GIF 就多一秒。
 
 ## 模型
 
-兩條路線都預設 `claude-opus-5-5`。要換就改 `src/lib/ai/models.ts`，或在
-`.env.local` 設 `CLAUDE_CHAT_MODEL` / `CLAUDE_EDITOR_MODEL`。Opus 是最貴的選項，
-`claude-sonnet-5-5` 大約是一半價格，`claude-haiku-5-5` 更是只有零頭。
+兩條路線都預設 `claude-opus-5-5`。要換就改 `src/lib/ai/models.ts`，或設
+`CLAUDE_CHAT_MODEL` / `CLAUDE_EDITOR_MODEL`。Opus 是最貴的選項，
+`claude-sonnet-5-5` 大約一半價格，`claude-haiku-5-5` 只有零頭。
 
-## 已知限制
+## 為什麼用了兩套 SDK
 
-以下都是真的，而且我還沒修。
+`api/ai/chat` 用官方的 `@anthropic-ai/sdk`，自己跑 tool use 迴圈，這樣比較容易把
+每一步透過 SSE 串到瀏覽器。
 
-- **沒有登入機制。** 它假設只有一個人、一台電腦。就目前狀態不要放到公開網路上。
-- **同時編輯會中止，不會合併。** 每一頁的內文都帶版本號，用過期版本送出的存檔會被
-  拒絕，自動存檔隨即停止並提示重新載入。這能擋住第二個分頁靜默覆蓋第一個，但沒有
-  合併機制——其中一邊重新載入時，會失去尚未存檔的修改。
-- **搜尋是 `LIKE` 全表掃描**，會讀過每一列。幾百頁沒問題，一萬頁就不行。
-- 編輯器內的 AI 以 HTML 溝通，所以它產生不出數學區塊。公式請自己用 `/math` 插入。
-- AI 偶爾會輸出 markdown 表格，轉換後變成一個空的 1x1 表格區塊。選起來刪掉即可。
+`api/ai/editor` 用 Vercel 的 `@ai-sdk/anthropic`，因為 `@blocknote/xl-ai` 是建在
+AI SDK 上的，它的串流和差異預覽協定必須照規格走。`ai` 固定在 v6、搭配
+`@ai-sdk/anthropic` v3 也是同樣的原因：升到 v7 會讓相依樹裡同時存在兩份 `ai`，而
+協定壞掉的方式從錯誤訊息完全看不出來。動過這些版本記得跑一次 `npm ls ai`。
+
+## 它不做什麼
+
+沒有帳號，也沒有權限。它假設只有一個人、一台電腦，所以伺服器綁在 localhost。
+
+同一頁開兩個分頁不會自動合併。內文帶版本號，用過期版本送出的存檔會被拒絕，第二個
+分頁不可能無聲無息蓋掉第一個。這時會跳出一條提示，先讓你把這邊的內容複製到剪貼簿，
+再重新載入。
+
+搜尋是 `LIKE` 全表掃描，這是刻意的。SQLite 的 FTS5 不會斷中文：預設斷詞器把一整串
+中文當成一個詞，什麼都搜不到；trigram 斷詞器至少要三個字，兩個字的詞一樣搜不到。
+全表掃描理論上比較慢，實際上才是對的。大概要到好幾千頁才會開始有感。
+
+沒有分享，沒有即時協作，沒有手機 app。
 
 ## 授權
 
-`@blocknote/xl-ai` 的授權是 GPL-3.0 OR PROPRIETARY（BlockNote 核心是 MPL-2.0），
-因此本專案採用 GPL-3.0。若要以閉源形式散佈，需要向 BlockNote 取得商用授權，或是
-自行重寫一套差異預覽層。
+GPL-3.0，因為 `@blocknote/xl-ai` 的授權是 GPL-3.0 OR PROPRIETARY（BlockNote 核心
+是 MPL-2.0）。若要閉源散佈，得向 BlockNote 取得商用授權，或自己重寫一套差異預覽層。
 
-本專案與 Notion Labs, Inc. 無任何關聯，也未獲其背書。「Notion」是該公司的商標，
-這個專案只是參考了它的介面配置。
+與 Notion Labs, Inc. 無關，也未獲其背書。「Notion」是該公司的商標，這裡只是參考了
+它的介面配置。
