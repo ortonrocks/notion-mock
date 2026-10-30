@@ -7,8 +7,9 @@ import PageHeader from "./PageHeader";
 import SettingsDialog from "./SettingsDialog";
 import { ToastProvider } from "./ui/Toast";
 import Sidebar from "./Sidebar";
+import BacklinksPanel from "./BacklinksPanel";
 import { api, type ApiKeyStatus } from "@/lib/client-api";
-import type { Page, PageSummary, PageTreeNode } from "@/lib/types";
+import type { Backlink, Page, PageSummary, PageTreeNode } from "@/lib/types";
 import type { AppEditor } from "@/lib/editor-schema";
 
 // BlockNote touches the DOM on construction, so it only runs in the browser.
@@ -23,15 +24,18 @@ export default function Workspace({
   page,
   initialTree,
   initialFavorites,
+  initialBacklinks,
   ancestors,
 }: {
   page: Page;
   initialTree: PageTreeNode[];
   initialFavorites: PageSummary[];
+  initialBacklinks: Backlink[];
   ancestors: PageSummary[];
 }) {
   const [tree, setTree] = useState(initialTree);
   const [favorites, setFavorites] = useState(initialFavorites);
+  const [backlinks, setBacklinks] = useState(initialBacklinks);
   const [title, setTitle] = useState(page.title);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [aiPanelOpen, setAiPanelOpen] = useState(true);
@@ -48,6 +52,13 @@ export default function Workspace({
       .then(setKeyStatus)
       .catch(() => {});
   }, []);
+
+  const refreshBacklinks = useCallback(() => {
+    void api
+      .backlinks(page.id)
+      .then(setBacklinks)
+      .catch(() => {});
+  }, [page.id]);
 
   const refreshTree = useCallback(async () => {
     const { tree: next, favorites: nextFavorites } = await api.workspace();
@@ -149,7 +160,9 @@ export default function Workspace({
                 onReady={(editor) => {
                   editorRef.current = editor;
                 }}
+                onSaved={refreshBacklinks}
               />
+              <BacklinksPanel backlinks={backlinks} />
             </div>
           </div>
         </main>

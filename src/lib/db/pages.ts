@@ -4,6 +4,7 @@ import { blocksToPlainText, parseContent } from "../blocks";
 import type { Page, PageRow, PageSummary, PageTreeNode, SearchHit } from "../types";
 import { db } from "./connection";
 import { orderBetween } from "./ordering";
+import { replaceLinks } from "./links";
 
 /** Thrown when an update targets a version of the page that is no longer current. */
 export class VersionConflictError extends Error {
@@ -176,6 +177,10 @@ export function updatePage(
 
     const { changes } = db.prepare(sql).run(...values);
     if (changes === 0) throw new VersionConflictError(existing);
+
+    // Same transaction as the content write, so the link graph can never
+    // disagree with the document it was derived from.
+    if (patch.content !== undefined) replaceLinks(id, patch.content);
 
     return getPage(id);
   });

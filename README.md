@@ -48,6 +48,11 @@ the middle third drops the page inside as a child. Starring a page pins it to a
 Favourites section above the tree, and the header shows the path down to
 whatever page you are on.
 
+Typing `@` looks up a page and drops in a link to it; if nothing matches, the
+last entry creates the page and links it in one step. Every page lists what
+points at it underneath the document, with a line of surrounding text. Internal
+links you paste by hand count too, not just `@` mentions.
+
 Screenshots, images, video and PDFs can be pasted or dropped straight in. They
 are stored as files and served from `/api/files/`, not stuffed into the
 document JSON.
@@ -212,6 +217,10 @@ Shiki 上色的程式碼區塊，以及 `/math` 插入 LaTeX 公式。`Ctrl`+`K`
 側欄的頁面樹可以拖曳：拖到一列的上三分之一或下三分之一是調整順序，拖到中間三分之一
 則是放進那一頁底下變成子頁面。按星號可以把頁面釘到樹上方的「我的最愛」，頁首則會顯示
 目前這一頁的所在路徑。
+
+輸入 `@` 會搜尋頁面並插入連結；如果沒有符合的，最後一項可以直接建立那一頁並連過去。
+每一頁的文件下方會列出有哪些頁面連到這裡，並附上一段上下文。手動貼上的內部連結也算，
+不限於 `@` 提及。
 
 截圖、圖片、影片和 PDF 可以直接貼上或拖進來。檔案會另外存起來、由 `/api/files/`
 提供，不會塞進文件的 JSON 裡。

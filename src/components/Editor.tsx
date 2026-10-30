@@ -21,6 +21,7 @@ import "@blocknote/core/fonts/inter.css";
 import "@blocknote/mantine/style.css";
 import "@blocknote/xl-ai/style.css";
 import { api, ConflictError } from "@/lib/client-api";
+import MentionMenu, { type MentionItem } from "./MentionMenu";
 import { cleanUpAfterAI } from "@/lib/editor-cleanup";
 import { schema, type AppEditor } from "@/lib/editor-schema";
 
@@ -46,11 +47,14 @@ export default function Editor({
   initialContent,
   initialVersion,
   onReady,
+  onSaved,
 }: {
   pageId: string;
   initialContent: unknown[];
   initialVersion: number;
   onReady: (editor: AppEditor) => void;
+  /** Fired after each successful write, for anything derived from the body. */
+  onSaved?: () => void;
 }) {
   const transport = useMemo(
     () => new DefaultChatTransport({ api: "/api/ai/editor" }),
@@ -115,6 +119,9 @@ export default function Editor({
       });
       versionRef.current = page.version;
       setSaveState("saved");
+      // Links are extracted server-side on write, so anything derived from
+      // them is only correct after a save has landed.
+      onSaved?.();
     } catch (error) {
       if (error instanceof ConflictError) {
         conflictRef.current = true;
@@ -127,7 +134,7 @@ export default function Editor({
       savingRef.current = false;
       if (dirtyRef.current && !conflictRef.current) void saveRef.current();
     }
-  }, [editor, pageId]);
+  }, [editor, pageId, onSaved]);
 
   useEffect(() => {
     saveRef.current = save;
@@ -186,6 +193,44 @@ export default function Editor({
     };
   }, []);
 
+  // --- @-mentions -----------------------------------------------------
+  //
+  // The menu searches the workspace and offers to create a page when nothing
+  // matches, which is how a mention of a page that does not exist yet becomes
+  // a one-step action rather than three.
+  const findMentions = useCallback(
+    async (query: string): Promise<MentionItem[]> => {
+      const trimmed = query.trim();
+      const hits = trimmed === "" ? [] : await api.search(trimmed).catch(() => []);
+      const items: MentionItem[] = hits
+        .filter((hit) => hit.id !== pageId)
+        .map((hit) => ({ id: hit.id, title: hit.title, icon: hit.icon }));
+
+      if (trimmed !== "" && !items.some((item) => item.title === trimmed)) {
+        items.push({ id: `create:${trimmed}`, title: trimmed, icon: null, create: true });
+      }
+      return items;
+    },
+    [pageId],
+  );
+
+  const insertMention = useCallback(
+    async (item: MentionItem) => {
+      let target = { id: item.id, title: item.title };
+      if (item.create) {
+        const page = await api.create({ title: item.title });
+        target = { id: page.id, title: page.title };
+      }
+      editor.insertInlineContent([
+        { type: "mention", props: { pageId: target.id, label: target.title } },
+        // A trailing space, or the caret stays glued to the chip and the next
+        // character typed is swallowed by it.
+        " ",
+      ]);
+    },
+    [editor],
+  );
+
   // A conflict means this copy cannot be saved. Reloading is the way out, so
   // there has to be a way to take your unsaved work with you first.
   const copyDocument = useCallback(() => {
@@ -237,6 +282,13 @@ export default function Editor({
               query,
             )
           }
+        />
+
+        <SuggestionMenuController
+          triggerCharacter="@"
+          getItems={findMentions}
+          suggestionMenuComponent={MentionMenu}
+          onItemClick={(item) => void insertMention(item)}
         />
       </BlockNoteView>
     </>

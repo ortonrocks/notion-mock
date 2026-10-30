@@ -99,6 +99,80 @@ export const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 4,
+    name: "page-links",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS page_links (
+          source_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+          target_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+          kind      TEXT NOT NULL CHECK (kind IN ('mention', 'link')),
+          context   TEXT NOT NULL DEFAULT '',
+          PRIMARY KEY (source_id, target_id)
+        ) WITHOUT ROWID;
+        CREATE INDEX IF NOT EXISTS page_links_target_idx ON page_links(target_id);
+      `);
+
+      // Existing documents already contain pasted internal links. Extracting
+      // them here means backlinks are not empty on the day this ships.
+      //
+      // The walk is inlined rather than imported: a migration has to keep
+      // working after `blocks.ts` changes, and this is the shape of a document
+      // as of version 4.
+      const INTERNAL_HREF = /^\/page\/([0-9a-f-]{36})$/;
+
+      const collect = (content: unknown, into: Map<string, string>, context = "") => {
+        if (!Array.isArray(content)) return;
+        for (const node of content) {
+          if (!node || typeof node !== "object") continue;
+          const n = node as {
+            type?: string;
+            href?: string;
+            props?: Record<string, unknown>;
+            content?: unknown;
+            children?: unknown;
+          };
+          if (n.type === "mention" && typeof n.props?.pageId === "string") {
+            into.set(n.props.pageId, context);
+          } else if (typeof n.href === "string") {
+            const match = INTERNAL_HREF.exec(n.href);
+            if (match) into.set(match[1], context);
+          }
+          collect(n.content, into, context);
+          collect(n.children, into, context);
+        }
+      };
+
+      const rows = db.prepare("SELECT id, content_json, plain_text FROM pages").all() as {
+        id: string;
+        content_json: string;
+        plain_text: string;
+      }[];
+
+      const insert = db.prepare(
+        "INSERT OR IGNORE INTO page_links (source_id, target_id, kind, context) VALUES (?, ?, 'link', ?)",
+      );
+      const live = new Set(
+        (db.prepare("SELECT id FROM pages").all() as { id: string }[]).map((r) => r.id),
+      );
+
+      for (const row of rows) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(row.content_json);
+        } catch {
+          continue;
+        }
+        const targets = new Map<string, string>();
+        collect(parsed, targets, row.plain_text.slice(0, 140));
+        for (const [targetId, context] of targets) {
+          // A link to a page that no longer exists would violate the foreign key.
+          if (targetId !== row.id && live.has(targetId)) insert.run(row.id, targetId, context);
+        }
+      }
+    },
+  },
 ];
 
 const TARGET_VERSION = MIGRATIONS.reduce((max, step) => Math.max(max, step.version), 0);

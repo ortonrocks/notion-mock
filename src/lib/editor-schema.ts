@@ -1,5 +1,6 @@
-import { BlockNoteSchema, defaultBlockSpecs } from "@blocknote/core";
+import { BlockNoteSchema, defaultBlockSpecs, defaultInlineContentSpecs } from "@blocknote/core";
 import { MathBlock } from "@/components/MathBlock";
+import { MentionInline } from "@/components/MentionInline";
 
 /**
  * The editor's schema, and the one place new block or inline-content types get
@@ -14,6 +15,10 @@ import { MathBlock } from "@/components/MathBlock";
  */
 export const schema = BlockNoteSchema.create({
   blockSpecs: { ...defaultBlockSpecs, math: MathBlock() },
+  // `inlineContentSpecs` replaces the defaults rather than extending them, so
+  // leaving out the spread would drop plain text and links from the schema —
+  // which fails at runtime, somewhere unhelpful, rather than here.
+  inlineContentSpecs: { ...defaultInlineContentSpecs, mention: MentionInline },
 });
 
 /**

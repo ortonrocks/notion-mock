@@ -53,3 +53,14 @@ export type TrashEntry = {
   /** How many nested pages were deleted along with this one. */
   descendants: number;
 };
+
+/** A page that points at the one you are looking at. */
+export type Backlink = {
+  id: string;
+  title: string;
+  icon: string | null;
+  updatedAt: number;
+  kind: "mention" | "link";
+  /** Text around the reference, so the list reads as more than titles. */
+  context: string;
+};

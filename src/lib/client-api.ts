@@ -1,4 +1,4 @@
-import type { Page, PageSummary, PageTreeNode, SearchHit, TrashEntry } from "./types";
+import type { Backlink, Page, PageSummary, PageTreeNode, SearchHit, TrashEntry } from "./types";
 
 /** Raised when a save was built on a version the server has moved past. */
 export class ConflictError extends Error {
@@ -78,6 +78,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify(target),
     }).then((r) => r.page),
+
+  backlinks: (id: string) =>
+    request<{ backlinks: Backlink[] }>(`/api/pages/${id}/backlinks`).then((r) => r.backlinks),
 
   favorite: (id: string, on: boolean) =>
     request<{ favorite: boolean }>(`/api/pages/${id}/favorite`, { method: on ? "POST" : "DELETE" }),
